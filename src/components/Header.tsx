@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import Select from 'react-select';
-import Checkbox from '@material-ui/core/Checkbox';
+import { Button, Checkbox } from '@material-ui/core';
 import FormControlLabel from '@material-ui/core/FormControlLabel';
 import _ from 'lodash';
 import { ViewOptions, PassData, Enhancement } from '../types';
@@ -47,6 +47,11 @@ const StyledSelect = styled(Select)`
 
 export default class Header extends React.Component<Props> {
 
+    passIndex() {
+        if (!this.props.passData) return -1;
+        return this.props.passData.findIndex(p => p === this.props.options.pass);
+    }
+
     passChange(pass: PassData) {
         this.props.optionsChange({ ...this.props.options, pass })
     }
@@ -82,6 +87,12 @@ export default class Header extends React.Component<Props> {
             && e.map === !this.props.options.enhancement.map
         );
         if (enhancement) this.props.optionsChange({ ...this.props.options, enhancement })
+    }
+
+    navigatePass(direction: -1 | 1) {
+        return () => {
+            if (this.props.passData) this.passChange(this.props.passData[this.passIndex() + direction]);
+        }
     }
 
     render() {
@@ -129,6 +140,9 @@ export default class Header extends React.Component<Props> {
         return (
             <Container>
                 <OptionContainer>
+                    <Button variant="outlined" onClick={this.navigatePass(-1)} disabled={this.passIndex() <= 0}>&lt;</Button>
+                </OptionContainer>
+                <OptionContainer>
                     <StyledSelect
                         width={400}
                         options={this.props.passData || []}
@@ -137,6 +151,9 @@ export default class Header extends React.Component<Props> {
                         getOptionValue={(o: any) => o}
                         onChange={(p: PassData) => this.passChange(p)}
                     />
+                </OptionContainer>
+                <OptionContainer>
+                    <Button variant="outlined" onClick={(this.navigatePass(1))} disabled={this.passIndex() >= this.props.passData.length - 1}>&gt;</Button>
                 </OptionContainer>
                 {enhancementSelection}
                 {enhancementOptions}

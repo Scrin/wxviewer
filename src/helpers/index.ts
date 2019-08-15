@@ -35,8 +35,8 @@ export const formatEnhancementName = (enhancementName: string) => {
         case 'contrastb': return 'Channel B (contrast enhanced)';
         case 'hvc': return 'HVC false-color';
         case 'hvct': return 'HVC false-color with land/sea colors';
-        case 'mcir': return 'MICR map color IR';
-        case 'msa': return 'MSA Multispectral analysis';
+        case 'mcir': return 'MCIR map color IR';
+        case 'msa': return 'MSA multispectral analysis';
         case 'pris': return 'Normalized raw image';
         case 'therm': return 'Thermal image';
         default: return enhancementName;
