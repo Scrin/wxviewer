@@ -163,11 +163,9 @@ export default class Viewer extends React.Component<Props, State> {
                 // selected pass or enhancement changed, preload "adjacent" passes with the same enhancement
                 const i = passData.findIndex(p => p === pass);
                 if (i >= 0) {
-                    for (let distance = 0; distance < 2; distance++) {
-                        if (i > 0) new Image().src = getImageURL(passData[i - 1], enhancement);
-                        if (i < passData.length - 1) new Image().src = getImageURL(passData[i + 1], enhancement);
-                        if (i > 1) new Image().src = getImageURL(passData[i - 2], enhancement);
-                        if (i < passData.length - 2) new Image().src = getImageURL(passData[i + 2], enhancement);
+                    for (let distance = 1; distance <= 2; distance++) {
+                        if (i >= distance) new Image().src = getImageURL(passData[i - distance], enhancement);
+                        if (i < passData.length - distance) new Image().src = getImageURL(passData[i + distance], enhancement);
                     }
                 }
             }
