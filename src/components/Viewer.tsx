@@ -113,7 +113,7 @@ export default class Viewer extends React.Component<Props, State> {
                 }
                 if (enhancements.length > 0) passData.push({ start: words[0], end: words[1], satellite: words[2], enhancements });
             });
-            passData.sort((a, b) => Number(b.start) - Number(a.start));
+            passData.sort((a, b) => Number(a.start) - Number(b.start));
             const viewOptions = this.loadViewOptionsFromUrl(passData);
             this.preloadImages(viewOptions, passData);
             this.setState({ viewOptions, passData });
@@ -122,8 +122,8 @@ export default class Viewer extends React.Component<Props, State> {
     }
 
     loadViewOptionsFromUrl(passData: Array<PassData>): ViewOptions {
-        let pass = passData[0];
-        let enhancement = passData[0].enhancements.find(e => e.type === 'msa') || passData[0].enhancements[0];
+        let pass = passData[passData.length - 1];
+        let enhancement = pass.enhancements.find(e => e.type === 'msa') || pass.enhancements[0];
         const pathParts = window.location.pathname.split('/');
         if (pathParts.length === 5) {
             pass = passData.find(p => p.start === pathParts[1] && p.end === pathParts[2] && p.satellite === pathParts[3]) || pass;

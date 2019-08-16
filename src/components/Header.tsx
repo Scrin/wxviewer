@@ -120,7 +120,7 @@ export default class Header extends React.Component<Props> {
                 <OptionContainer>
                     <StyledSelect
                         width={400}
-                        options={this.props.passData || []}
+                        options={Array.from(this.props.passData || []).reverse()}
                         value={(this.props.passData || []).find(p => p === this.props.options.pass)}
                         getOptionLabel={formatPass}
                         getOptionValue={(o: any) => o}
