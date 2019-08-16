@@ -3,8 +3,7 @@ import styled from 'styled-components';
 import Header from './Header';
 import { ViewOptions, PassData, Enhancement } from '../types';
 import axios from 'axios';
-import { baseUrl, getImageURL, formatPass } from '../helpers';
-
+import { baseUrl, getImageURL, formatPass, formatSatelliteName, formatPassDateTime } from '../helpers';
 
 interface Props {
 }
@@ -60,6 +59,37 @@ export default class Viewer extends React.Component<Props, State> {
         window.onpopstate = () => this.state.passData && this.setState({ viewOptions: this.loadViewOptionsFromUrl(this.state.passData) });
     }
 
+    componentDidMount() {
+        document.addEventListener("keydown", e => this.keyEvent(e), false);
+    }
+
+    componentWillUnmount() {
+        document.removeEventListener("keydown", e => this.keyEvent(e), false);
+    }
+
+    render() {
+        const pass = this.state.viewOptions.pass;
+        const enhancement = this.state.viewOptions.enhancement;
+        let image = null;
+        if (this.state.passData && pass && enhancement) {
+            const Image = this.state.zoom ? ZoomedImage : DefaultImage;
+            image = <Image alt={formatPass(pass)} src={getImageURL(pass, enhancement)} onClick={() => this.setState({ zoom: !this.state.zoom })} />
+        }
+        return (
+            <Wrapper>
+                <Header
+                    passData={this.state.passData}
+                    options={this.state.viewOptions}
+                    optionsChange={opts => this.optionsChange(opts)}
+                    navigatePass={(direction) => this.navigatePass(direction)}
+                    togglePrecip={() => this.togglePrecip()}
+                    toggleMap={() => this.toggleMap()}
+                />
+                <Content>{image}</Content>
+            </Wrapper>
+        );
+    }
+
     load() {
         axios({ url: baseUrl + '/api/list' }).then(resp => {
             const passData: Array<PassData> = [];
@@ -87,6 +117,7 @@ export default class Viewer extends React.Component<Props, State> {
             const viewOptions = this.loadViewOptionsFromUrl(passData);
             this.preloadImages(viewOptions, passData);
             this.setState({ viewOptions, passData });
+            if (viewOptions.pass) document.title = formatSatelliteName(viewOptions.pass.satellite) + ' on ' + formatPassDateTime(viewOptions.pass);
         });
     }
 
@@ -119,27 +150,8 @@ export default class Viewer extends React.Component<Props, State> {
             const queryString = params.toString();
             if (queryString !== '') url += '?' + queryString;
             window.history.pushState(null, '', url)
+            document.title = formatSatelliteName(viewOptions.pass.satellite) + ' on ' + formatPassDateTime(viewOptions.pass);
         }
-    }
-
-    render() {
-        const pass = this.state.viewOptions.pass;
-        const enhancement = this.state.viewOptions.enhancement;
-        let image = null;
-        if (this.state.passData && pass && enhancement) {
-            const Image = this.state.zoom ? ZoomedImage : DefaultImage;
-            image = <Image alt={formatPass(pass)} src={getImageURL(pass, enhancement)} onClick={() => this.setState({ zoom: !this.state.zoom })} />
-        }
-        return (
-            <Wrapper>
-                <Header
-                    options={this.state.viewOptions}
-                    optionsChange={opts => this.optionsChange(opts)}
-                    passData={this.state.passData}
-                />
-                <Content>{image}</Content>
-            </Wrapper>
-        );
     }
 
     preloadImages(viewOptions: ViewOptions, passData: Array<PassData> | null = this.state.passData) {
@@ -166,5 +178,88 @@ export default class Viewer extends React.Component<Props, State> {
                 });
             }
         }
+    }
+
+    keyEvent(event: KeyboardEvent) {
+        switch (event.key) {
+            case 'ArrowUp': return this.navigateEnhancement(-1);
+            case 'ArrowDown': return this.navigateEnhancement(1);
+            case 'ArrowLeft': return this.navigatePass(-1);
+            case 'ArrowRight': return this.navigatePass(1);
+            case 'p': return this.togglePrecip();
+            case 'm': return this.toggleMap();
+            case ' ': return this.setState({ zoom: !this.state.zoom });
+        }
+    }
+
+    navigatePass(direction: -1 | 1) {
+        if (this.state.passData) {
+            const index = this.passIndex() + direction;
+            if (index < 0 || index >= this.state.passData.length) return;
+            this.passChange(this.state.passData[index]);
+        }
+    }
+
+    navigateEnhancement(direction: -1 | 1) {
+        const currentPass = this.state.viewOptions.pass;
+        const currentEnhancement = this.state.viewOptions.enhancement;
+        if (currentPass && currentEnhancement) {
+            let index = this.enhancementIndex();
+            while (index >= 0 && index < currentPass.enhancements.length) {
+                index += direction;
+                if (index < 0 || index >= currentPass.enhancements.length) return;
+                // find first enhancement of a different type
+                if (currentPass.enhancements[index].type !== currentEnhancement.type) break;
+            }
+            if (index < 0 || index >= currentPass.enhancements.length) return;
+            let enhancement = currentPass.enhancements[index];
+            // try to find an enhancement with same precip/map choices
+            enhancement = currentPass.enhancements.find(e => e.type === enhancement.type && e.precip === currentEnhancement.precip && e.map === currentEnhancement.map) || enhancement;
+            this.enhancementChange(enhancement);
+        }
+    }
+
+    passChange(pass: PassData) {
+        let enhancement = this.state.viewOptions.enhancement;
+        // Try to find the same enhancement on the new pass
+        enhancement = pass.enhancements.find(e => enhancement && e.type === enhancement.type && e.precip === enhancement.precip && e.map === enhancement.map) || null;
+        if (!enhancement) enhancement = pass.enhancements[0];
+        this.optionsChange({ ...this.state.viewOptions, pass, enhancement });
+    }
+
+    enhancementChange(enhancement: Enhancement) {
+        this.optionsChange({ ...this.state.viewOptions, enhancement });
+    }
+
+    togglePrecip() {
+        if (!this.state.viewOptions.pass) return;
+        const enhancement = this.state.viewOptions.pass.enhancements.find(e =>
+            this.state.viewOptions.enhancement
+            && e.type === this.state.viewOptions.enhancement.type
+            && e.precip === !this.state.viewOptions.enhancement.precip
+            && e.map === this.state.viewOptions.enhancement.map
+        );
+        if (enhancement) this.optionsChange({ ...this.state.viewOptions, enhancement });
+    }
+
+    toggleMap() {
+        if (!this.state.viewOptions.pass) return;
+        const enhancement = this.state.viewOptions.pass.enhancements.find(e =>
+            this.state.viewOptions.enhancement
+            && e.type === this.state.viewOptions.enhancement.type
+            && e.precip === this.state.viewOptions.enhancement.precip
+            && e.map === !this.state.viewOptions.enhancement.map
+        );
+        if (enhancement) this.optionsChange({ ...this.state.viewOptions, enhancement });
+    }
+
+    passIndex() {
+        if (!this.state.passData) return -1;
+        return this.state.passData.findIndex(p => p === this.state.viewOptions.pass);
+    }
+
+    enhancementIndex() {
+        if (!this.state.viewOptions.pass) return -1;
+        return this.state.viewOptions.pass.enhancements.findIndex(e => e === this.state.viewOptions.enhancement);
     }
 }

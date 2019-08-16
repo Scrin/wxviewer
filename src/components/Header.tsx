@@ -10,7 +10,10 @@ import { formatPass, formatEnhancementName } from '../helpers';
 interface Props {
     passData: Array<PassData> | null,
     options: ViewOptions,
-    optionsChange: (opts: ViewOptions) => void
+    optionsChange: (opts: ViewOptions) => void,
+    navigatePass: (direction: -1 | 1) => void,
+    togglePrecip: () => void,
+    toggleMap: () => void
 }
 
 const Container = styled.div`
@@ -67,34 +70,6 @@ export default class Header extends React.Component<Props> {
         if (enhancement) this.props.optionsChange({ ...this.props.options, enhancement })
     }
 
-    precipChange() {
-        if (!this.props.options.pass) return;
-        const enhancement = this.props.options.pass.enhancements.find(e =>
-            this.props.options.enhancement
-            && e.type === this.props.options.enhancement.type
-            && e.precip === !this.props.options.enhancement.precip
-            && e.map === this.props.options.enhancement.map
-        );
-        if (enhancement) this.props.optionsChange({ ...this.props.options, enhancement })
-    }
-
-    mapChange() {
-        if (!this.props.options.pass) return;
-        const enhancement = this.props.options.pass.enhancements.find(e =>
-            this.props.options.enhancement
-            && e.type === this.props.options.enhancement.type
-            && e.precip === this.props.options.enhancement.precip
-            && e.map === !this.props.options.enhancement.map
-        );
-        if (enhancement) this.props.optionsChange({ ...this.props.options, enhancement })
-    }
-
-    navigatePass(direction: -1 | 1) {
-        return () => {
-            if (this.props.passData) this.passChange(this.props.passData[this.passIndex() + direction]);
-        }
-    }
-
     render() {
         if (this.props.passData === null) return <Container><TextContainer>Loading satellite passes...</TextContainer></Container>
         let enhancementSelection = null;
@@ -121,7 +96,7 @@ export default class Header extends React.Component<Props> {
                     <CheckboxContainer key='precip'>
                         <FormControlLabel
                             label='Precipitation'
-                            control={<Checkbox color='primary' checked={this.props.options.enhancement.precip} onChange={e => this.precipChange()} />}
+                            control={<Checkbox color='primary' checked={this.props.options.enhancement.precip} onChange={e => this.props.togglePrecip()} />}
                         />
                     </CheckboxContainer>
                 );
@@ -131,7 +106,7 @@ export default class Header extends React.Component<Props> {
                     <CheckboxContainer key='map'>
                         <FormControlLabel
                             label='Map overlay'
-                            control={<Checkbox color='primary' checked={this.props.options.enhancement.map} onChange={e => this.mapChange()} />}
+                            control={<Checkbox color='primary' checked={this.props.options.enhancement.map} onChange={e => this.props.toggleMap()} />}
                         />
                     </CheckboxContainer>
                 );
@@ -140,7 +115,7 @@ export default class Header extends React.Component<Props> {
         return (
             <Container>
                 <OptionContainer>
-                    <Button variant="outlined" onClick={this.navigatePass(-1)} disabled={this.passIndex() <= 0}>&lt;</Button>
+                    <Button variant="outlined" onClick={() => this.props.navigatePass(-1)} disabled={this.passIndex() <= 0}>&lt;</Button>
                 </OptionContainer>
                 <OptionContainer>
                     <StyledSelect
@@ -153,7 +128,7 @@ export default class Header extends React.Component<Props> {
                     />
                 </OptionContainer>
                 <OptionContainer>
-                    <Button variant="outlined" onClick={(this.navigatePass(1))} disabled={this.passIndex() >= this.props.passData.length - 1}>&gt;</Button>
+                    <Button variant="outlined" onClick={(() => this.props.navigatePass(1))} disabled={this.passIndex() >= this.props.passData.length - 1}>&gt;</Button>
                 </OptionContainer>
                 {enhancementSelection}
                 {enhancementOptions}
