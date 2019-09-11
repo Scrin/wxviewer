@@ -1,4 +1,7 @@
-export interface ViewOptions {
+export * from './redux/actions';
+export * from './redux/state';
+
+export interface PassSelection {
     pass: PassData | null,
     enhancement: Enhancement | null
 }

@@ -4,17 +4,9 @@ import Select from 'react-select';
 import { Button, Checkbox } from '@material-ui/core';
 import FormControlLabel from '@material-ui/core/FormControlLabel';
 import _ from 'lodash';
-import { ViewOptions, PassData, Enhancement } from '../types';
-import { formatPass, formatEnhancementName } from '../helpers';
-
-interface Props {
-    passData: Array<PassData> | null,
-    options: ViewOptions,
-    optionsChange: (opts: ViewOptions) => void,
-    navigatePass: (direction: -1 | 1) => void,
-    togglePrecip: () => void,
-    toggleMap: () => void
-}
+import { PassData, Enhancement, State, PassSelection } from '../types';
+import { formatPass, formatEnhancementName, enhancementChange, togglePrecip, toggleMap, navigatePass, currentPassIndex, passChange } from '../helpers';
+import { useSelector } from 'react-redux';
 
 const Container = styled.div`
     background-color: #f7f7f7;
@@ -48,91 +40,84 @@ const StyledSelect = styled(Select)`
     width: ${props => props.width}px;
 `
 
-export default class Header extends React.Component<Props> {
+const passSelector = (passData: Array<PassData>, passSelection: PassSelection) => (
+    <>
+        <OptionContainer>
+            <Button variant="outlined" onClick={() => navigatePass(-1)} disabled={currentPassIndex() <= 0}>&lt;</Button>
+        </OptionContainer>
+        <OptionContainer>
+            <StyledSelect
+                width={400}
+                options={Array.from(passData).reverse()}
+                value={passData.find(p => p === passSelection.pass)}
+                getOptionLabel={formatPass}
+                getOptionValue={(o: any) => o}
+                onChange={(p: PassData) => passChange(p)}
+            />
+        </OptionContainer>
+        <OptionContainer>
+            <Button variant="outlined" onClick={(() => navigatePass(1))} disabled={currentPassIndex() >= passData.length - 1}>&gt;</Button>
+        </OptionContainer>
+    </>
+)
 
-    passIndex() {
-        if (!this.props.passData) return -1;
-        return this.props.passData.findIndex(p => p === this.props.options.pass);
-    }
+const enhancementSelector = (passSelection: PassSelection) => {
+    if (!passSelection.pass) return null;
 
-    passChange(pass: PassData) {
-        this.props.optionsChange({ ...this.props.options, pass })
-    }
+    const enhancementOpts = _.uniq(passSelection.pass.enhancements.map(e => e.type));
+    const opt = enhancementOpts.find(e => passSelection.enhancement && passSelection.enhancement.type === e);
+    return (
+        <OptionContainer>
+            <StyledSelect
+                width={400}
+                options={enhancementOpts}
+                value={[opt]}
+                getOptionLabel={formatEnhancementName}
+                getOptionValue={(o: any) => o}
+                onChange={(e: string) => enhancementChange(e)}
+            />
+        </OptionContainer>
+    )
+}
 
-    enhancementChange(enhancementType: string) {
-        if (!this.props.options.pass) return;
-        let enhancement = this.props.options.pass.enhancements.find(e => {
-            if (e.type !== enhancementType) return false;
-            if (this.props.options.enhancement) return e.precip === this.props.options.enhancement.precip && e.map === this.props.options.enhancement.map;
-            return true;
-        });
-        if (!enhancement) enhancement = this.props.options.pass.enhancements.find(e => e.type === enhancementType);
-        if (enhancement) this.props.optionsChange({ ...this.props.options, enhancement })
-    }
+const enhancementOptions = (passSelection: PassSelection) => {
+    if (!passSelection.pass || !passSelection.enhancement) return null;
 
-    render() {
-        if (this.props.passData === null) return <Container><TextContainer>Loading satellite passes...</TextContainer></Container>
-        let enhancementSelection = null;
-        if (this.props.options.pass) {
-            const enhancementOpts = _.uniq(this.props.options.pass.enhancements.map(e => e.type));
-            const opt = enhancementOpts.find(e => this.props.options.enhancement && this.props.options.enhancement.type === e);
-            enhancementSelection = (
-                <OptionContainer>
-                    <StyledSelect
-                        width={400}
-                        options={enhancementOpts}
-                        value={[opt]}
-                        getOptionLabel={formatEnhancementName}
-                        getOptionValue={(o: any) => o}
-                        onChange={(e: string) => this.enhancementChange(e)}
-                    />
-                </OptionContainer>
-            )
-        }
-        const enhancementOptions = [];
-        if (this.props.options.pass && this.props.options.enhancement) {
-            if (this.props.options.pass.enhancements.some((e: Enhancement) => this.props.options.enhancement && this.props.options.enhancement.type === e.type && e.precip)) {
-                enhancementOptions.push(
-                    <CheckboxContainer key='precip'>
-                        <FormControlLabel
-                            label='Precipitation'
-                            control={<Checkbox color='primary' checked={this.props.options.enhancement.precip} onChange={e => this.props.togglePrecip()} />}
-                        />
-                    </CheckboxContainer>
-                );
-            }
-            if (this.props.options.pass.enhancements.some((e: Enhancement) => this.props.options.enhancement && this.props.options.enhancement.type === e.type && e.map)) {
-                enhancementOptions.push(
-                    <CheckboxContainer key='map'>
-                        <FormControlLabel
-                            label='Map overlay'
-                            control={<Checkbox color='primary' checked={this.props.options.enhancement.map} onChange={e => this.props.toggleMap()} />}
-                        />
-                    </CheckboxContainer>
-                );
-            }
-        }
-        return (
-            <Container>
-                <OptionContainer>
-                    <Button variant="outlined" onClick={() => this.props.navigatePass(-1)} disabled={this.passIndex() <= 0}>&lt;</Button>
-                </OptionContainer>
-                <OptionContainer>
-                    <StyledSelect
-                        width={400}
-                        options={Array.from(this.props.passData || []).reverse()}
-                        value={(this.props.passData || []).find(p => p === this.props.options.pass)}
-                        getOptionLabel={formatPass}
-                        getOptionValue={(o: any) => o}
-                        onChange={(p: PassData) => this.passChange(p)}
-                    />
-                </OptionContainer>
-                <OptionContainer>
-                    <Button variant="outlined" onClick={(() => this.props.navigatePass(1))} disabled={this.passIndex() >= this.props.passData.length - 1}>&gt;</Button>
-                </OptionContainer>
-                {enhancementSelection}
-                {enhancementOptions}
-            </Container>
+    const enhancementOptions = [];
+    if (passSelection.pass.enhancements.some((e: Enhancement) => passSelection.enhancement && passSelection.enhancement.type === e.type && e.precip)) {
+        enhancementOptions.push(
+            <CheckboxContainer key='precip'>
+                <FormControlLabel
+                    label='Precipitation'
+                    control={<Checkbox color='primary' checked={passSelection.enhancement.precip} onChange={togglePrecip} />}
+                />
+            </CheckboxContainer>
         );
     }
+    if (passSelection.pass.enhancements.some((e: Enhancement) => passSelection.enhancement && passSelection.enhancement.type === e.type && e.map)) {
+        enhancementOptions.push(
+            <CheckboxContainer key='map'>
+                <FormControlLabel
+                    label='Map overlay'
+                    control={<Checkbox color='primary' checked={passSelection.enhancement.map} onChange={toggleMap} />}
+                />
+            </CheckboxContainer>
+        );
+    }
+    return enhancementOptions;
+}
+
+export default () => {
+    const passData = useSelector((state: State) => state.pass.passData);
+    const passSelection = useSelector((state: State) => state.ui.passSelection);
+
+    if (passData.length <= 0) return <Container><TextContainer>Loading satellite passes...</TextContainer></Container>
+
+    return (
+        <Container>
+            {passSelector(passData, passSelection)}
+            {enhancementSelector(passSelection)}
+            {enhancementOptions(passSelection)}
+        </Container>
+    );
 }

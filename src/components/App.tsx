@@ -1,6 +1,8 @@
 import React from 'react';
 import { createGlobalStyle } from 'styled-components';
-import Viewer from './components/Viewer';
+import Viewer from './Viewer';
+import { Provider } from 'react-redux';
+import store from '../redux/store';
 
 const GlobalStyle = createGlobalStyle`
     html {
@@ -19,8 +21,8 @@ const GlobalStyle = createGlobalStyle`
 `
 
 export default () => (
-  <>
-    <GlobalStyle />
-    <Viewer />
-  </>
+    <Provider store={store}>
+        <GlobalStyle />
+        <Viewer />
+    </Provider>
 );
