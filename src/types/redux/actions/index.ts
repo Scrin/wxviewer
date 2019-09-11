@@ -7,3 +7,4 @@ export * from './ui';
 export type Action =
     | Pass.SetPassData
     | UI.SetPassSelection
+    | UI.ShowDrawer

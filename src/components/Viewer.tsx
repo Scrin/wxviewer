@@ -5,6 +5,7 @@ import Header from './Header';
 import { State } from '../types';
 import { getImageURL, formatPass, loadPassSelectionFromUrl, loadPasses, keyEvent } from '../helpers';
 import { setPassSelection } from '../redux/actions';
+import Drawer from './Drawer';
 
 
 const Wrapper = styled.div`
@@ -55,6 +56,7 @@ export default () => {
     return (
         <Wrapper>
             <Header />
+            <Drawer />
             <Content>{image}</Content>
         </Wrapper>
     );

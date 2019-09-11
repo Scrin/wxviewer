@@ -1,4 +1,5 @@
 import { PassSelection, PassData } from '..';
+import { showDrawer } from '../../redux/actions';
 
 export interface State {
     ui: UiState,
@@ -6,7 +7,8 @@ export interface State {
 }
 
 export interface UiState {
-    passSelection: PassSelection
+    passSelection: PassSelection,
+    showDrawer: boolean
 }
 
 export interface PassState {

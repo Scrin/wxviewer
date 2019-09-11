@@ -1,12 +1,15 @@
 import React from 'react';
 import styled from 'styled-components';
-import Select from 'react-select';
-import { Button, Checkbox } from '@material-ui/core';
-import FormControlLabel from '@material-ui/core/FormControlLabel';
-import _ from 'lodash';
-import { PassData, Enhancement, State, PassSelection } from '../types';
-import { formatPass, formatEnhancementName, enhancementChange, togglePrecip, toggleMap, navigatePass, currentPassIndex, passChange } from '../helpers';
+import { Hidden } from '@material-ui/core';
+import { State, PassSelection } from '../types';
 import { useSelector } from 'react-redux';
+import PassSelector from './PassSelector';
+import EnhancementSelector from './EnhancementSelector';
+import EnhancementOptions from './EnhancementOptions';
+import { TextContainer } from './styled';
+import { formatPass, formatEnhancementName } from '../helpers';
+import { NextPass, PreviousPass } from './PassNavigation';
+import { OpenMenu } from './MenuButton';
 
 const Container = styled.div`
     background-color: #f7f7f7;
@@ -17,94 +20,17 @@ const Container = styled.div`
     box-sizing: border-box;
 `
 
-const OptionContainer = styled.div`
-    margin-right: 16px;
-    float: left;
-`
-
-const CheckboxContainer = styled(OptionContainer)`
-    margin-right: 0;
-`
-
-const TextContainer = styled.span`
-    display: block;
-    padding: 9px;
-    font-size: 1rem;
-    font-family: "Roboto", "Helvetica", "Arial", sans-serif;
-    font-weight: 400;
-    line-height: 1.5;
-    letter-spacing: 0.00938rem;
-`
-
-const StyledSelect = styled(Select)`
-    width: ${props => props.width}px;
-`
-
-const passSelector = (passData: Array<PassData>, passSelection: PassSelection) => (
-    <>
-        <OptionContainer>
-            <Button variant="outlined" onClick={() => navigatePass(-1)} disabled={currentPassIndex() <= 0}>&lt;</Button>
-        </OptionContainer>
-        <OptionContainer>
-            <StyledSelect
-                width={400}
-                options={Array.from(passData).reverse()}
-                value={passData.find(p => p === passSelection.pass)}
-                getOptionLabel={formatPass}
-                getOptionValue={(o: any) => o}
-                onChange={(p: PassData) => passChange(p)}
-            />
-        </OptionContainer>
-        <OptionContainer>
-            <Button variant="outlined" onClick={(() => navigatePass(1))} disabled={currentPassIndex() >= passData.length - 1}>&gt;</Button>
-        </OptionContainer>
-    </>
-)
-
-const enhancementSelector = (passSelection: PassSelection) => {
+const currentPass = (passSelection: PassSelection) => {
     if (!passSelection.pass) return null;
-
-    const enhancementOpts = _.uniq(passSelection.pass.enhancements.map(e => e.type));
-    const opt = enhancementOpts.find(e => passSelection.enhancement && passSelection.enhancement.type === e);
-    return (
-        <OptionContainer>
-            <StyledSelect
-                width={400}
-                options={enhancementOpts}
-                value={[opt]}
-                getOptionLabel={formatEnhancementName}
-                getOptionValue={(o: any) => o}
-                onChange={(e: string) => enhancementChange(e)}
-            />
-        </OptionContainer>
-    )
+    return formatPass(passSelection.pass);
 }
 
-const enhancementOptions = (passSelection: PassSelection) => {
-    if (!passSelection.pass || !passSelection.enhancement) return null;
-
-    const enhancementOptions = [];
-    if (passSelection.pass.enhancements.some((e: Enhancement) => passSelection.enhancement && passSelection.enhancement.type === e.type && e.precip)) {
-        enhancementOptions.push(
-            <CheckboxContainer key='precip'>
-                <FormControlLabel
-                    label='Precipitation'
-                    control={<Checkbox color='primary' checked={passSelection.enhancement.precip} onChange={togglePrecip} />}
-                />
-            </CheckboxContainer>
-        );
-    }
-    if (passSelection.pass.enhancements.some((e: Enhancement) => passSelection.enhancement && passSelection.enhancement.type === e.type && e.map)) {
-        enhancementOptions.push(
-            <CheckboxContainer key='map'>
-                <FormControlLabel
-                    label='Map overlay'
-                    control={<Checkbox color='primary' checked={passSelection.enhancement.map} onChange={toggleMap} />}
-                />
-            </CheckboxContainer>
-        );
-    }
-    return enhancementOptions;
+const currentEnhancement = (passSelection: PassSelection) => {
+    if (!passSelection.enhancement) return null;
+    let str = formatEnhancementName(passSelection.enhancement.type);
+    if (passSelection.enhancement.precip) str += ', precipitation';
+    if (passSelection.enhancement.map) str += ', map';
+    return str;
 }
 
 export default () => {
@@ -115,9 +41,24 @@ export default () => {
 
     return (
         <Container>
-            {passSelector(passData, passSelection)}
-            {enhancementSelector(passSelection)}
-            {enhancementOptions(passSelection)}
+            <Hidden mdUp>
+                <OpenMenu />
+                <TextContainer>{currentPass(passSelection)} - {currentEnhancement(passSelection)}</TextContainer>
+            </Hidden>
+            <Hidden smDown lgUp>
+                <OpenMenu />
+                <PreviousPass />
+                <PassSelector />
+                <NextPass />
+                <TextContainer>{currentEnhancement(passSelection)}</TextContainer>
+            </Hidden>
+            <Hidden mdDown>
+                <PreviousPass />
+                <PassSelector />
+                <NextPass />
+                <EnhancementSelector />
+                <EnhancementOptions />
+            </Hidden>
         </Container>
     );
 }
