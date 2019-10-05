@@ -4,7 +4,7 @@ IMAGE_PATH=/wxrecordings/images
 CACHE_FILE=/tmp/wxlist-cache
 
 if [ -f "$CACHE_FILE" ]; then
-    LAST_MODIFIED=$(stat --printf="%X\n%Y\n%Z\n" "$IMAGE_PATH/$(ls -t "$IMAGE_PATH" | head -n1)" | sort -n | tail -n1)
+    LAST_MODIFIED=$(stat --printf="%Y\n%Z\n" "$IMAGE_PATH/$(ls -t "$IMAGE_PATH" | head -n1)" | sort -n | tail -n1)
     LAST_CACHED=$(stat -c "%Y" "$CACHE_FILE")
     if [ "$LAST_MODIFIED" -lt "$LAST_CACHED" ]; then
         cat "$CACHE_FILE"
