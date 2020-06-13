@@ -36,10 +36,10 @@ func main() {
 		}
 		for _, file := range files {
 			name := file.Name()
-			if len(name) < len(dirName)+6 { // a valid image file name must be longer than the base name, a dash and the file extension
+			if len(name) < len(dirName)+7 { // a valid image file name must be longer than the base name, a dash and the file extension (.webp)
 				continue // too short name, can't be a valid image
 			}
-			enhancement := name[len(dirName)+1 : len(name)-4] // remove the "base part", a dash, and the file extension
+			enhancement := name[len(dirName)+1 : len(name)-5] // remove the "base part", a dash, and the file extension (.webp)
 			fmt.Print(" " + enhancement)
 		}
 		fmt.Println()

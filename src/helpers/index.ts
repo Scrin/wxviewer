@@ -13,7 +13,7 @@ export const getImageURL = (pass: PassData, enhancement: Enhancement) => {
     let s = baseUrl + '/images/' + pass.start + '-' + pass.end + '-' + pass.satellite + '/' + pass.start + '-' + pass.end + '-' + pass.satellite + '-' + enhancement.type;
     if (enhancement.precip) s += '-precip';
     if (enhancement.map) s += '-map';
-    return s + '.png';
+    return s + '.webp';
 }
 
 export const preloadImages = (passSelection: PassSelection, passData?: Array<PassData>) => {
