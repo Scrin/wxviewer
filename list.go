@@ -32,6 +32,7 @@ func main() {
 		// image file name is same as the dir name followed by the "enhancement" used
 		files, err := ioutil.ReadDir(baseDir + "/" + dirName)
 		if err != nil {
+			fmt.Println()
 			continue
 		}
 		for _, file := range files {
