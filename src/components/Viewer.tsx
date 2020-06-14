@@ -6,6 +6,7 @@ import { State } from '../types';
 import { getImageURL, formatPass, loadPassSelectionFromUrl, loadPasses, keyEvent } from '../helpers';
 import { setPassSelection } from '../redux/actions';
 import Drawer from './Drawer';
+import Previews from './Previews';
 
 
 const Wrapper = styled.div`
@@ -19,19 +20,23 @@ const Content = styled.div`
     height: calc(100% - 60px);
     min-height: 0;
     position: relative;
+    display: flex;
+`
+
+const ImageContainer = styled.div`
+    width: 100%;
+    flex-shrink: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 `
 
 const Img = styled.img`
+    display: block;
     max-height: 100%;
     max-width: 100%;
     width: auto;
     height: auto;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    margin: auto;
 `
 
 export default () => {
@@ -57,7 +62,10 @@ export default () => {
         <Wrapper>
             <Header />
             <Drawer />
-            <Content>{image}</Content>
+            <Content>
+                <ImageContainer>{image}</ImageContainer>
+                <Previews />
+            </Content>
         </Wrapper>
     );
 }

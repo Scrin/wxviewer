@@ -35,12 +35,6 @@ export const preloadImages = (passSelection: PassSelection, passData?: Array<Pas
                 }
             }
         }
-        if (newPass !== oldPass || (oldEnhancement && oldEnhancement.type !== newEnhancement.type)) {
-            // pass changed or enhancement changed to a different enhancement type, preload variants (precip, map..)
-            newPass.enhancements.forEach(e => {
-                if (e !== newEnhancement && e.type === newEnhancement.type) new Image().src = getImageURL(newPass, e);
-            });
-        }
     }
 }
 
@@ -80,7 +74,10 @@ export const loadPasses = () => {
                 }
                 enhancements.push({ type: enhancement, map, precip });
             }
-            if (enhancements.length > 0) passData.push({ start: words[0], end: words[1], satellite: words[2], enhancements });
+            if (enhancements.length > 0) {
+                enhancements.sort(sortEnhancements)
+                passData.push({ start: words[0], end: words[1], satellite: words[2], enhancements });
+            }
         });
         passData.sort((a, b) => Number(a.start) - Number(b.start));
         const passSelection = loadPassSelectionFromUrl(passData);
@@ -89,4 +86,21 @@ export const loadPasses = () => {
         store.dispatch(setPassSelection(passSelection));
         if (passSelection.pass) document.title = formatSatelliteName(passSelection.pass.satellite) + ' on ' + formatPassDateTime(passSelection.pass);
     });
+}
+
+const sortEnhancements = (e1: Enhancement, e2: Enhancement): number => {
+    const sortValue = (e: Enhancement) => {
+        switch (e.type) {
+            case "contrasta": return 1;
+            case "contrastb": return 2;
+            case "hvc": return 3;
+            case "hvct": return 4;
+            case "mcir": return 5;
+            case "therm": return 6;
+            case "msa": return 7;
+            case "pris": return 8;
+            default: return 9;
+        }
+    }
+    return sortValue(e1) - sortValue(e2);
 }
