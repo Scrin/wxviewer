@@ -213,9 +213,17 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 
 func runWebServer() {
 	fmt.Println("Starting webserver...")
+	fserv := http.FileServer(http.Dir(staticPath))
 	http.HandleFunc("/api/list", apiList)
 	http.HandleFunc("/images/", serveImage)
-	http.Handle("/", http.FileServer(http.Dir(staticPath)))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(r.RequestURI, "/")                     // first part is blank as it's before the first /, the second part is a number when a pass is selected
+		if _, err := strconv.ParseInt(parts[1], 10, 64); err == nil { // second part is a number, rewrite the URI to root to serve the index.html
+			r.URL.Path = "/"
+			r.RequestURI = "/"
+		}
+		fserv.ServeHTTP(w, r)
+	})
 	err := http.ListenAndServe(":80", nil)
 	if err != nil {
 		log.Fatal(err)
