@@ -189,7 +189,7 @@ func updatePasses() {
 	for _, item := range resp.CommonPrefixes {
 		passes[strings.TrimSuffix(*item.Prefix, "/")] = struct{}{}
 	}
-	lastTimestamp, err := time.Parse("20060102150405", strings.Split(*resp.CommonPrefixes[0].Prefix, "-")[0])
+	lastTimestamp, err := time.Parse("20060102150405", strings.Split(*resp.CommonPrefixes[len(resp.CommonPrefixes)-1].Prefix, "-")[0])
 	if err == nil {
 		metrics.lastPassTime.Set(float64(lastTimestamp.Unix()))
 	}
