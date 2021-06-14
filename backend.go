@@ -57,10 +57,10 @@ var (
 )
 
 var metrics struct {
-	passCount       prometheus.Gauge
 	lastPassTime    prometheus.Gauge
 	cacheHits       prometheus.Counter
 	cacheMisses     prometheus.Counter
+	passCount       *prometheus.GaugeVec
 	cacheSize       *prometheus.GaugeVec
 	cacheSizeBytes  *prometheus.GaugeVec
 	requestsHandled *prometheus.CounterVec
@@ -69,10 +69,6 @@ var metrics struct {
 func initMetrics() {
 	metricPrefix := "wxviewer_"
 
-	metrics.passCount = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: metricPrefix + "passes_total",
-		Help: "Total number of passes available",
-	})
 	metrics.lastPassTime = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: metricPrefix + "last_pass_time",
 		Help: "Timestamp of the latest pass",
@@ -85,6 +81,10 @@ func initMetrics() {
 		Name: metricPrefix + "cache_misses",
 		Help: "Total pass cache misses",
 	})
+	metrics.passCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: metricPrefix + "passes_total",
+		Help: "Total number of passes available",
+	}, []string{"satellite"})
 	metrics.cacheSize = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: metricPrefix + "cache_size",
 		Help: "Size of pass cache",
@@ -145,11 +145,7 @@ func loadPasses() {
 
 		lastItem = resp.CommonPrefixes[len(resp.CommonPrefixes)-1].Prefix
 	}
-	lastTimestamp, err := time.Parse("20060102150405", strings.Split(*lastItem, "-")[0])
-	if err == nil {
-		metrics.lastPassTime.Set(float64(lastTimestamp.Unix()))
-	}
-	metrics.passCount.Set(float64(len(passes)))
+	updatePassMetrics(*lastItem)
 	passListLastUpdated = time.Now().Unix()
 }
 
@@ -183,12 +179,23 @@ func updatePasses() {
 	for _, item := range resp.CommonPrefixes {
 		passes[strings.TrimSuffix(*item.Prefix, "/")] = struct{}{}
 	}
-	lastTimestamp, err := time.Parse("20060102150405", strings.Split(*resp.CommonPrefixes[len(resp.CommonPrefixes)-1].Prefix, "-")[0])
+	updatePassMetrics(*resp.CommonPrefixes[len(resp.CommonPrefixes)-1].Prefix)
+	passListLastUpdated = time.Now().Unix()
+}
+
+func updatePassMetrics(lastPass string) {
+	lastTimestamp, err := time.Parse("20060102150405", strings.Split(lastPass, "-")[0])
 	if err == nil {
 		metrics.lastPassTime.Set(float64(lastTimestamp.Unix()))
 	}
-	metrics.passCount.Set(float64(len(passes)))
-	passListLastUpdated = time.Now().Unix()
+	satellites := make(map[string]int64)
+	for pass := range passes {
+		s := strings.SplitN(pass, "-", 3)
+		satellites[s[2]]++
+	}
+	for satellite, count := range satellites {
+		metrics.passCount.With(prometheus.Labels{"satellite": satellite}).Set(float64(count))
+	}
 }
 
 func getPasses() []string {
