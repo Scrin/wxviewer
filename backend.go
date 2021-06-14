@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -36,6 +38,7 @@ var (
 
 var (
 	svc                        *s3.S3
+	imageMutex                 singleflight.Group
 	cacheMutex                 sync.Mutex
 	passListMutex              sync.Mutex
 	passListLastUpdated        int64
@@ -153,8 +156,8 @@ func updatePasses() {
 	if passListLastUpdated+passListCacheDuration > time.Now().Unix() {
 		return
 	}
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
+	passListMutex.Lock()
+	defer passListMutex.Unlock()
 	if passListLastUpdated+passListCacheDuration > time.Now().Unix() {
 		return
 	}
@@ -247,6 +250,47 @@ func validateImageRequest(uri string) bool {
 	return false
 }
 
+func loadImage(imageFile string) (interface{}, error) {
+	resp, err := svc.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(imageFile),
+	})
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, *resp.ContentLength)
+	io.ReadFull(resp.Body, data)
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	imageCache[imageFile] = data
+	imageCacheQueue <- imageFile
+	if int64(len(imageCache)) > maxImageCacheSize {
+		delete(imageCache, <-imageCacheQueue)
+	}
+	for {
+		imageCacheSizeBytes = 0
+		for _, data := range imageCache {
+			imageCacheSizeBytes += int64(len(data))
+		}
+		if imageCacheSizeBytes > maxImageCacheSizeBytes && len(imageCache) > 0 {
+			delete(imageCache, <-imageCacheQueue)
+		} else {
+			break
+		}
+	}
+	fmt.Printf("Fetched %s from S3, cache size is now %d (%d MB)\n", imageFile, len(imageCache), imageCacheSizeBytes/1024/1024)
+	if int64(len(imageCache)) > highestImageCacheSize {
+		metrics.cacheSize.With(prometheus.Labels{"type": "highest"}).Set(float64(len(imageCache)))
+	}
+	if imageCacheSizeBytes > highestImageCacheSizeBytes {
+		metrics.cacheSizeBytes.With(prometheus.Labels{"type": "highest"}).Set(float64(imageCacheSizeBytes))
+	}
+	metrics.cacheSize.With(prometheus.Labels{"type": "current"}).Set(float64(len(imageCache)))
+	metrics.cacheSizeBytes.With(prometheus.Labels{"type": "current"}).Set(float64(imageCacheSizeBytes))
+	metrics.cacheMisses.Inc()
+	return data, nil
+}
+
 func serveImage(w http.ResponseWriter, r *http.Request) {
 	imageFile := strings.TrimPrefix(r.RequestURI, "/images/")
 	if !validateImageRequest(imageFile) {
@@ -256,52 +300,19 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 	}
 	imageData, present := imageCache[imageFile]
 	if !present {
-		cacheMutex.Lock()
-		defer cacheMutex.Unlock()
-		imageData, present = imageCache[imageFile]
-		if !present {
-			resp, err := svc.GetObject(&s3.GetObjectInput{
-				Bucket: aws.String(bucketName),
-				Key:    aws.String(imageFile),
-			})
-			if err != nil {
-				fmt.Printf("Failed to get %s\n", imageFile)
-				fmt.Print(err)
-				metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "404"}).Inc()
-				w.WriteHeader(404)
-				return
-			}
-			imageData = make([]byte, *resp.ContentLength)
-			io.ReadFull(resp.Body, imageData)
-			imageCache[imageFile] = imageData
-			imageCacheQueue <- imageFile
-			if int64(len(imageCache)) > maxImageCacheSize {
-				delete(imageCache, <-imageCacheQueue)
-			}
-			for {
-				imageCacheSizeBytes = 0
-				for _, data := range imageCache {
-					imageCacheSizeBytes += int64(len(data))
-				}
-				if imageCacheSizeBytes > maxImageCacheSizeBytes && len(imageCache) > 0 {
-					delete(imageCache, <-imageCacheQueue)
-				} else {
-					break
-				}
-			}
-			fmt.Printf("Fetched %s from S3, cache size is now %d (%d MB)\n", imageFile, len(imageCache), imageCacheSizeBytes/1024/1024)
-			if int64(len(imageCache)) > highestImageCacheSize {
-				metrics.cacheSize.With(prometheus.Labels{"type": "highest"}).Set(float64(len(imageCache)))
-			}
-			if imageCacheSizeBytes > highestImageCacheSizeBytes {
-				metrics.cacheSizeBytes.With(prometheus.Labels{"type": "highest"}).Set(float64(imageCacheSizeBytes))
-			}
-			metrics.cacheSize.With(prometheus.Labels{"type": "current"}).Set(float64(len(imageCache)))
-			metrics.cacheSizeBytes.With(prometheus.Labels{"type": "current"}).Set(float64(imageCacheSizeBytes))
-			metrics.cacheMisses.Inc()
-		} else {
+		resp, err, shared := imageMutex.Do(imageFile, func() (interface{}, error) { return loadImage(imageFile) })
+		imageMutex.Forget(imageFile) // we have our own caching, no need to cache here
+		if err != nil {
+			fmt.Printf("Failed to get %s\n", imageFile)
+			fmt.Print(err)
+			metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "404"}).Inc()
+			w.WriteHeader(404)
+			return
+		}
+		if shared {
 			metrics.cacheHits.Inc()
 		}
+		imageData = resp.([]byte)
 	} else {
 		metrics.cacheHits.Inc()
 	}
@@ -311,8 +322,8 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 	_, err := w.Write(imageData)
 	if err != nil {
 		fmt.Print(err)
-		w.WriteHeader(500)
 		metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "500"}).Inc()
+		w.WriteHeader(500)
 		return
 	}
 	metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "200"}).Inc()
