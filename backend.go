@@ -278,6 +278,7 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 				delete(imageCache, <-imageCacheQueue)
 			}
 			for {
+				imageCacheSizeBytes = 0
 				for _, data := range imageCache {
 					imageCacheSizeBytes += int64(len(data))
 				}
