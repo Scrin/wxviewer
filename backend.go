@@ -61,7 +61,6 @@ var metrics struct {
 	lastPassTime    prometheus.Gauge
 	cacheHits       prometheus.Counter
 	cacheMisses     prometheus.Counter
-	imagesServed    prometheus.Counter
 	cacheSize       *prometheus.GaugeVec
 	cacheSizeBytes  *prometheus.GaugeVec
 	requestsHandled *prometheus.CounterVec
@@ -86,10 +85,6 @@ func initMetrics() {
 		Name: metricPrefix + "cache_misses",
 		Help: "Total pass cache misses",
 	})
-	metrics.imagesServed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: metricPrefix + "images_served",
-		Help: "Total number of served images",
-	})
 	metrics.cacheSize = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: metricPrefix + "cache_size",
 		Help: "Size of pass cache",
@@ -107,7 +102,6 @@ func initMetrics() {
 	prometheus.MustRegister(metrics.lastPassTime)
 	prometheus.MustRegister(metrics.cacheHits)
 	prometheus.MustRegister(metrics.cacheMisses)
-	prometheus.MustRegister(metrics.imagesServed)
 	prometheus.MustRegister(metrics.cacheSize)
 	prometheus.MustRegister(metrics.cacheSizeBytes)
 	prometheus.MustRegister(metrics.requestsHandled)
@@ -315,7 +309,6 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "200"}).Inc()
-	metrics.imagesServed.Inc()
 }
 
 func runWebServer() {
