@@ -16,11 +16,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
 	staticPath            = "/static"
-	cacheSize             = 100
 	passListCacheDuration = 60
 )
 
@@ -33,14 +35,19 @@ var (
 )
 
 var (
-	svc                 *s3.S3
-	cacheMutex          sync.Mutex
-	passListMutex       sync.Mutex
-	passListLastUpdated int64
-	passes              = make(map[string]struct{})
-	imageCache          = make(map[string][]byte)
-	imageCacheQueue     = make(chan string, cacheSize+1)
-	validEnhancements   = []string{
+	svc                        *s3.S3
+	cacheMutex                 sync.Mutex
+	passListMutex              sync.Mutex
+	passListLastUpdated        int64
+	passes                     = make(map[string]struct{})
+	imageCache                 = make(map[string][]byte)
+	imageCacheQueue            = make(chan string, maxImageCacheSize+1)
+	imageCacheSizeBytes        = int64(0)
+	highestImageCacheSize      = int64(0)
+	highestImageCacheSizeBytes = int64(0)
+	maxImageCacheSize          = int64(100)
+	maxImageCacheSizeBytes     = int64(100 * 1024 * 1024)
+	validEnhancements          = []string{
 		"contrasta-map", "contrasta", "contrastb-map", "contrastb",
 		"hvc-map", "hvc-precip-map", "hvc-precip", "hvc",
 		"hvct-map", "hvct-precip-map", "hvct-precip", "hvct",
@@ -48,6 +55,66 @@ var (
 		"msa-map", "msa-precip-map", "msa-precip", "msa",
 		"pris", "therm-map", "therm"}
 )
+
+var metrics struct {
+	passCount       prometheus.Gauge
+	lastPassTime    prometheus.Gauge
+	cacheHits       prometheus.Counter
+	cacheMisses     prometheus.Counter
+	imagesServed    prometheus.Counter
+	cacheSize       *prometheus.GaugeVec
+	cacheSizeBytes  *prometheus.GaugeVec
+	requestsHandled *prometheus.CounterVec
+}
+
+func initMetrics() {
+	metricPrefix := "wxviewer_"
+
+	metrics.passCount = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: metricPrefix + "passes_total",
+		Help: "Total number of passes available",
+	})
+	metrics.lastPassTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: metricPrefix + "last_pass_time",
+		Help: "Timestamp of the latest pass",
+	})
+	metrics.cacheHits = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: metricPrefix + "cache_hits",
+		Help: "Total pass cache hits",
+	})
+	metrics.cacheMisses = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: metricPrefix + "cache_misses",
+		Help: "Total pass cache misses",
+	})
+	metrics.imagesServed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: metricPrefix + "images_served",
+		Help: "Total number of served images",
+	})
+	metrics.cacheSize = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: metricPrefix + "cache_size",
+		Help: "Size of pass cache",
+	}, []string{"type"})
+	metrics.cacheSizeBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: metricPrefix + "cache_size_bytes",
+		Help: "Size of pass cache in bytes",
+	}, []string{"type"})
+	metrics.requestsHandled = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: metricPrefix + "api_requests_handled",
+		Help: "Total api requests handled",
+	}, []string{"api", "code"})
+
+	prometheus.MustRegister(metrics.passCount)
+	prometheus.MustRegister(metrics.lastPassTime)
+	prometheus.MustRegister(metrics.cacheHits)
+	prometheus.MustRegister(metrics.cacheMisses)
+	prometheus.MustRegister(metrics.imagesServed)
+	prometheus.MustRegister(metrics.cacheSize)
+	prometheus.MustRegister(metrics.cacheSizeBytes)
+	prometheus.MustRegister(metrics.requestsHandled)
+
+	metrics.cacheSize.With(prometheus.Labels{"type": "max"}).Set(float64(maxImageCacheSize))
+	metrics.cacheSizeBytes.With(prometheus.Labels{"type": "max"}).Set(float64(maxImageCacheSizeBytes))
+}
 
 func connect() {
 	sess, err := session.NewSession(
@@ -84,6 +151,11 @@ func loadPasses() {
 
 		lastItem = resp.CommonPrefixes[len(resp.CommonPrefixes)-1].Prefix
 	}
+	lastTimestamp, err := time.Parse("20060102150405", strings.Split(*lastItem, "-")[0])
+	if err == nil {
+		metrics.lastPassTime.Set(float64(lastTimestamp.Unix()))
+	}
+	metrics.passCount.Set(float64(len(passes)))
 	passListLastUpdated = time.Now().Unix()
 }
 
@@ -117,6 +189,11 @@ func updatePasses() {
 	for _, item := range resp.CommonPrefixes {
 		passes[strings.TrimSuffix(*item.Prefix, "/")] = struct{}{}
 	}
+	lastTimestamp, err := time.Parse("20060102150405", strings.Split(*resp.CommonPrefixes[0].Prefix, "-")[0])
+	if err == nil {
+		metrics.lastPassTime.Set(float64(lastTimestamp.Unix()))
+	}
+	metrics.passCount.Set(float64(len(passes)))
 	passListLastUpdated = time.Now().Unix()
 }
 
@@ -140,6 +217,7 @@ func apiList(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, name)
 		fmt.Fprint(w, enhancementString)
 	}
+	metrics.requestsHandled.With(prometheus.Labels{"api": "list", "code": "200"}).Inc()
 }
 
 func validateImageRequest(uri string) bool {
@@ -171,6 +249,7 @@ func validateImageRequest(uri string) bool {
 func serveImage(w http.ResponseWriter, r *http.Request) {
 	imageFile := strings.TrimPrefix(r.RequestURI, "/images/")
 	if !validateImageRequest(imageFile) {
+		metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "404"}).Inc()
 		w.WriteHeader(404)
 		return
 	}
@@ -187,6 +266,7 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				fmt.Printf("Failed to get %s\n", imageFile)
 				fmt.Print(err)
+				metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "404"}).Inc()
 				w.WriteHeader(404)
 				return
 			}
@@ -194,11 +274,34 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 			io.ReadFull(resp.Body, imageData)
 			imageCache[imageFile] = imageData
 			imageCacheQueue <- imageFile
-			if len(imageCache) > cacheSize {
+			if int64(len(imageCache)) > maxImageCacheSize {
 				delete(imageCache, <-imageCacheQueue)
 			}
-			fmt.Printf("Fetched %s from S3, cache size is now %d\n", imageFile, len(imageCache))
+			for {
+				for _, data := range imageCache {
+					imageCacheSizeBytes += int64(len(data))
+				}
+				if imageCacheSizeBytes > maxImageCacheSizeBytes && len(imageCache) > 0 {
+					delete(imageCache, <-imageCacheQueue)
+				} else {
+					break
+				}
+			}
+			fmt.Printf("Fetched %s from S3, cache size is now %d (%d MB)\n", imageFile, len(imageCache), imageCacheSizeBytes/1024/1024)
+			if int64(len(imageCache)) > highestImageCacheSize {
+				metrics.cacheSize.With(prometheus.Labels{"type": "highest"}).Set(float64(len(imageCache)))
+			}
+			if imageCacheSizeBytes > highestImageCacheSizeBytes {
+				metrics.cacheSizeBytes.With(prometheus.Labels{"type": "highest"}).Set(float64(imageCacheSizeBytes))
+			}
+			metrics.cacheSize.With(prometheus.Labels{"type": "current"}).Set(float64(len(imageCache)))
+			metrics.cacheSizeBytes.With(prometheus.Labels{"type": "current"}).Set(float64(imageCacheSizeBytes))
+			metrics.cacheMisses.Inc()
+		} else {
+			metrics.cacheHits.Inc()
 		}
+	} else {
+		metrics.cacheHits.Inc()
 	}
 	w.Header().Set("Content-Type", "image/webp")
 	w.Header().Set("Content-Length", strconv.Itoa(len(imageData)))
@@ -207,13 +310,17 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Print(err)
 		w.WriteHeader(500)
+		metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "500"}).Inc()
 		return
 	}
+	metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "200"}).Inc()
+	metrics.imagesServed.Inc()
 }
 
 func runWebServer() {
 	fmt.Println("Starting webserver...")
 	fserv := http.FileServer(http.Dir(staticPath))
+	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("/api/list", apiList)
 	http.HandleFunc("/images/", serveImage)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +338,7 @@ func runWebServer() {
 }
 
 func main() {
+	var err error
 	for _, e := range os.Environ() {
 		split := strings.SplitN(e, "=", 2)
 		switch split[0] {
@@ -244,6 +352,17 @@ func main() {
 			region = split[1]
 		case "WXVIEWER_BUCKET_ENDPOINT":
 			endpoint = split[1]
+		case "WXVIEWER_IMAGE_CACHE_SIZE":
+			maxImageCacheSize, err = strconv.ParseInt(split[1], 10, 64)
+			if err == nil {
+				log.Fatalf("Invalid image cache size: %s", split[1])
+			}
+		case "WXVIEWER_IMAGE_CACHE_SIZE_MB":
+			maxImageCacheSizeBytes, err = strconv.ParseInt(split[1], 10, 64)
+			if err == nil {
+				log.Fatalf("Invalid image cache size megabytes: %s", split[1])
+			}
+			maxImageCacheSizeBytes *= 1024 * 1024
 		}
 	}
 
@@ -259,6 +378,7 @@ func main() {
 		log.Fatal("invalid config")
 	}
 
+	initMetrics()
 	connect()
 	loadPasses()
 	runWebServer()
