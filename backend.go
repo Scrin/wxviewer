@@ -280,10 +280,12 @@ func loadImage(imageFile string) (interface{}, error) {
 	}
 	fmt.Printf("Fetched %s from S3, cache size is now %d (%d MB)\n", imageFile, len(imageCache), imageCacheSizeBytes/1024/1024)
 	if int64(len(imageCache)) > highestImageCacheSize {
-		metrics.cacheSize.With(prometheus.Labels{"type": "highest"}).Set(float64(len(imageCache)))
+		highestImageCacheSize = int64(len(imageCache))
+		metrics.cacheSize.With(prometheus.Labels{"type": "highest"}).Set(float64(highestImageCacheSize))
 	}
 	if imageCacheSizeBytes > highestImageCacheSizeBytes {
-		metrics.cacheSizeBytes.With(prometheus.Labels{"type": "highest"}).Set(float64(imageCacheSizeBytes))
+		highestImageCacheSizeBytes = imageCacheSizeBytes
+		metrics.cacheSizeBytes.With(prometheus.Labels{"type": "highest"}).Set(float64(highestImageCacheSizeBytes))
 	}
 	metrics.cacheSize.With(prometheus.Labels{"type": "current"}).Set(float64(len(imageCache)))
 	metrics.cacheSizeBytes.With(prometheus.Labels{"type": "current"}).Set(float64(imageCacheSizeBytes))
