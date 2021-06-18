@@ -66,7 +66,7 @@ var metrics struct {
 	passCount       *prometheus.GaugeVec
 	cacheSize       *prometheus.GaugeVec
 	cacheSizeBytes  *prometheus.GaugeVec
-	requestsHandled *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
 }
 
 func initMetrics() {
@@ -84,6 +84,7 @@ func initMetrics() {
 		Name: metricPrefix + "cache_misses",
 		Help: "Total pass cache misses",
 	})
+
 	metrics.passCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: metricPrefix + "passes_total",
 		Help: "Total number of passes available",
@@ -96,9 +97,11 @@ func initMetrics() {
 		Name: metricPrefix + "cache_size_bytes",
 		Help: "Size of pass cache in bytes",
 	}, []string{"type"})
-	metrics.requestsHandled = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: metricPrefix + "api_requests_handled",
-		Help: "Total api requests handled",
+
+	metrics.requestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    metricPrefix + "request_time",
+		Help:    "Time it has taken to process a request",
+		Buckets: []float64{.000001, .000005, .00001, .00005, .0001, .0005, .001, .005, .01, .05, .1, .25, .5, 1, 2.5, 5, 10},
 	}, []string{"api", "code"})
 
 	prometheus.MustRegister(metrics.passCount)
@@ -107,7 +110,7 @@ func initMetrics() {
 	prometheus.MustRegister(metrics.cacheMisses)
 	prometheus.MustRegister(metrics.cacheSize)
 	prometheus.MustRegister(metrics.cacheSizeBytes)
-	prometheus.MustRegister(metrics.requestsHandled)
+	prometheus.MustRegister(metrics.requestDuration)
 
 	metrics.cacheSize.With(prometheus.Labels{"type": "max"}).Set(float64(maxImageCacheSize))
 	metrics.cacheSizeBytes.With(prometheus.Labels{"type": "max"}).Set(float64(maxImageCacheSizeBytes))
@@ -214,6 +217,7 @@ func getPasses() []string {
 }
 
 func apiList(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	updatePasses()
 	names := getPasses()
 	enhancementString := " " + strings.Join(validEnhancements, " ") + "\n"
@@ -221,7 +225,7 @@ func apiList(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, name)
 		fmt.Fprint(w, enhancementString)
 	}
-	metrics.requestsHandled.With(prometheus.Labels{"api": "list", "code": "200"}).Inc()
+	metrics.requestDuration.With(prometheus.Labels{"api": "list", "code": "200"}).Observe(time.Since(start).Seconds())
 }
 
 func validateImageRequest(uri string) bool {
@@ -294,10 +298,12 @@ func loadImage(imageFile string) (interface{}, error) {
 }
 
 func serveImage(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	imageFile := strings.TrimPrefix(r.RequestURI, "/images/")
 	if !validateImageRequest(imageFile) {
-		metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "404"}).Inc()
-		w.WriteHeader(404)
+		w.Header().Set("Cache-Control", "public")
+		w.WriteHeader(400)
+		metrics.requestDuration.With(prometheus.Labels{"api": "images", "code": "400"}).Observe(time.Since(start).Seconds())
 		return
 	}
 	imageData, present := imageCache[imageFile]
@@ -306,9 +312,10 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 		imageMutex.Forget(imageFile) // we have our own caching, no need to cache here
 		if err != nil {
 			fmt.Printf("Failed to get %s\n", imageFile)
-			fmt.Print(err)
-			metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "404"}).Inc()
+			fmt.Println(err)
+			w.Header().Set("Cache-Control", "public, max-age=10, must-revalidate")
 			w.WriteHeader(404)
+			metrics.requestDuration.With(prometheus.Labels{"api": "images", "code": "404"}).Observe(time.Since(start).Seconds())
 			return
 		}
 		if shared {
@@ -324,11 +331,11 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 	_, err := w.Write(imageData)
 	if err != nil {
 		fmt.Print(err)
-		metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "500"}).Inc()
 		w.WriteHeader(500)
+		metrics.requestDuration.With(prometheus.Labels{"api": "images", "code": "500"}).Observe(time.Since(start).Seconds())
 		return
 	}
-	metrics.requestsHandled.With(prometheus.Labels{"api": "images", "code": "200"}).Inc()
+	metrics.requestDuration.With(prometheus.Labels{"api": "images", "code": "200"}).Observe(time.Since(start).Seconds())
 }
 
 func runWebServer() {
