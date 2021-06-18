@@ -101,7 +101,7 @@ func initMetrics() {
 	metrics.requestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    metricPrefix + "request_time",
 		Help:    "Time it has taken to process a request",
-		Buckets: []float64{.001, .005, .01, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		Buckets: []float64{.001, .005, .01, .05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60},
 	}, []string{"api", "code"})
 
 	prometheus.MustRegister(metrics.passCount)
